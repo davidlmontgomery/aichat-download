@@ -26,6 +26,7 @@ void (async () => {
     CHECK_INTERVAL_MS: 500,
     STEP_WAIT_MS: 300,         // wait after each downward scroll step
     STEP_FRACTION: 0.8,        // scroll step = 0.8 x viewport height
+    TOP_NUDGE_PX: 60,          // UNTESTED: while waiting at the top, bump down and back up so a scroll-event-driven pager sees a real delta (0 = off)
     REVOKE_DELAY_MS: 15000,    // >= 10 s before revoking the blob URL
 
     SERVICE_NAME: 'Google Gemini',
@@ -88,6 +89,9 @@ void (async () => {
       'mat-icon', '.google-symbols', '.material-icons', '.material-symbols-outlined',                  // UNVERIFIED: icon-font ligature text
       '[role="toolbar"]', '[role="tooltip"]', '[role="menu"]', '[role="dialog"]'                       // generic
     ].join(', '),
+    // Elements skipped unconditionally (bypasses the CONTENT_ANCHORS exemption below). Empty = off. Fill in once a DOM
+    // snippet of a response WITH expanded thinking is available; do NOT use [class*="thought"] (matches .has-thoughts).
+    ALWAYS_SKIP: '',
     CONTENT_ANCHORS: 'message-content, .markdown',                 // a chrome-looking element holding these is never skipped
     CITATION: 'source-footnote, sources-carousel-inline, source-inline-chip, sources-list',  // VERIFIED names; kept only if they hold <a href>
     CODE_LABEL: '.code-block-decoration',                          // VERIFIED
@@ -215,10 +219,12 @@ void (async () => {
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     return (h >>> 0).toString(16);
   }
+  let hashKeysUsed = false;
   function baseKey(role, marker, region) {
     const pair = marker.closest(CONFIG.PAIR);
     if (pair && pair.id) return role + ':' + pair.id;
-    return role + ':h' + hash32((region.textContent || '').trim().slice(0, 200)); // never hash a marker alone
+    hashKeysUsed = true;
+    return role + ':h' + hash32(squash(region.textContent || '').slice(0, 200)); // whitespace-insensitive; never hash a marker alone
   }
 
   // ===================================================================
@@ -256,6 +262,7 @@ void (async () => {
       return { role: it.role, marker: it.el, el, key: n ? base + '#' + n : base };
     });
     ingest(mounted);
+    if (hashKeysUsed) addWarning('Turn identity fell back to text hashes (no .conversation-container id); duplicated or merged turns are possible');
     return { count: mounted.length, firstKey: mounted.length ? mounted[0].key : null };
   }
 
@@ -308,6 +315,7 @@ void (async () => {
       let last = null, stable = 0;
       while (stable < CONFIG.STABLE_CHECKS) {
         if (stop()) return false;
+        if (stable > 0 && CONFIG.TOP_NUDGE_PX > 0) { jump(CONFIG.TOP_NUDGE_PX); await sleep(80); }
         jump(0);
         await sleep(CONFIG.CHECK_INTERVAL_MS);
         const s = scan();
@@ -693,6 +701,7 @@ void (async () => {
       if (CONFIG.DEBUG) reject('sr-only skipped: ' + describe(n) + ' "' + squash(n.textContent).slice(0, 40) + '"');
       return true;
     }
+    if (CONFIG.ALWAYS_SKIP && n.matches(CONFIG.ALWAYS_SKIP)) return true;
     if (n.matches(CONFIG.CHROME)) {
       if (n.querySelector(CONFIG.CONTENT_ANCHORS)) { // never let a chrome-looking wrapper swallow the message
         if (CONFIG.DEBUG) reject('chrome-looking element holds message content, kept: ' + describe(n));

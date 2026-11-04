@@ -14,7 +14,8 @@ const debug = args.includes('--debug');
 const outIdx = args.indexOf('--out');
 const outFile = outIdx >= 0 ? args[outIdx + 1] : 'bookmarklet.txt';
 if (outIdx >= 0 && (!outFile || outFile.startsWith('--'))) throw new Error('--out needs a file name');
-const input = args.find((a, i) => !a.startsWith('--') && i !== outIdx + 1) || 'chat-export-gemini.js';
+const outValIdx = outIdx >= 0 ? outIdx + 1 : -1;   // index of the --out value (-1 when --out is absent)
+const input = args.find((a, i) => !a.startsWith('--') && i !== outValIdx) || 'chat-export-gemini.js';
 
 let src = await readFile(input, 'utf8');
 
